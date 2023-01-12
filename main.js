@@ -154,7 +154,7 @@ async function main() {
     torusKnot.receiveShadow = true;
     // scene.add(torusKnot);
     const bunny = new THREE.Mesh((await new GLTFLoader().loadAsync("bunny.glb")).scene.children[0].children[0].geometry.scale(0.075, 0.075, 0.075).translate(0, 18, 0)
-        /* new THREE.SphereGeometry(5, 32, 32).translate(0, 5, 0)*/
+        /*new THREE.SphereGeometry(5, 32, 32).translate(0, 5, 0)*/
         , glassMat);
     bunny.castShadow = true;
     scene.add(bunny);
@@ -486,6 +486,7 @@ vec3 totalInternalReflection(vec3 ro, vec3 rd, vec3 pos, vec3 normal, float ior,
             causticsQuad.material.uniforms["lightPlaneConstant"].value = dirLightNearPlane.constant;
             causticsQuad.material.uniforms["lightPlaneNormal"].value = dirLightNearPlane.normal;
             causticsQuad.material.uniforms["time"].value = performance.now() / 1000;
+            causticsQuad.material.uniforms.lightDir.value = directionalLight.position.clone().normalize().multiplyScalar(-1);
             causticsQuad.material.uniforms.bvh.value.updateFrom(bunnyTree);
             causticsQuad.material.uniforms.normalAttribute.value.updateFrom(bunny.geometry.attributes.normal);
             helper.visible = false;
