@@ -58,32 +58,24 @@ async function main() {
     const ambientLight = new THREE.AmbientLight(new THREE.Color(1.0, 1.0, 1.0), 0.25);
     scene.add(ambientLight);
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.0);
-    let lightAngle = Math.PI / 4; //new THREE.Vector3(30, 40, 20).normalize();
-    // directionalLight.position.set(30, 40, 20);
-    directionalLight.position.set(40 * Math.sin(lightAngle), 40, 40 * Math.cos(lightAngle));
-    const causticSize = 40;
-    // Shadows
     directionalLight.castShadow = true;
     directionalLight.shadow.mapSize.width = 1024;
     directionalLight.shadow.mapSize.height = 1024;
-    directionalLight.shadow.camera.left = -causticSize;
-    directionalLight.shadow.camera.right = causticSize;
-    directionalLight.shadow.camera.top = causticSize;
-    directionalLight.shadow.camera.bottom = -causticSize;
-    directionalLight.shadow.camera.near = 0.1;
-    directionalLight.shadow.camera.far = 100;
     directionalLight.shadow.bias = -0.001;
     directionalLight.shadow.blurSamples = 8;
     directionalLight.shadow.radius = 4;
     scene.add(directionalLight);
-    const areaLight = new THREE.RectAreaLight(0xffffff, 1, causticSize * 2, causticSize * 2);
-    areaLight.position.copy(directionalLight.position);
-    areaLight.lookAt(0, 0, 0);
-    scene.add(areaLight);
+    scene.add(directionalLight.target);
+    const areaLight = new THREE.RectAreaLight(0xffffff, 1, 0, 0);
     const rectLightHelper = new RectAreaLightHelper(areaLight);
     areaLight.add(rectLightHelper);
+    scene.add(areaLight);
     const helper = new THREE.CameraHelper(directionalLight.shadow.camera);
     scene.add(helper);
+    let lightAngle = Math.PI / 4; //new THREE.Vector3(30, 40, 20).normalize();
+    let lightRadius = 40;
+    // directionalLight.position.set(30, 40, 20);
+    let causticSize = 40;
     const ior = 1.1;
     let causticNeedsUpdate = true;
     const glassMat = new THREE.MeshPhysicalMaterial({
@@ -101,7 +93,8 @@ async function main() {
         causticIntensity: 0.05,
         worldRadius: 0.3125,
         bunnyRotation: 0.0,
-        lightAngle: lightAngle
+        lightAngle: lightAngle,
+        lightRadius: lightRadius
     }
     const gui = new GUI();
     gui.add(effectController, "ior", 1.0, 2.0, 0.01).onChange((value) => {
@@ -126,12 +119,18 @@ async function main() {
         bunny.rotation.y = value;
         causticNeedsUpdate = true;
     });
-    gui.add(effectController, "lightAngle", 0, 2 * Math.PI, 0.01).onChange((value) => {
-        directionalLight.position.set(40 * Math.sin(value), 40, 40 * Math.cos(value));
-        areaLight.position.copy(directionalLight.position);
-        areaLight.lookAt(0, 0, 0);
-        causticNeedsUpdate = true;
-    });
+    /*  gui.add(effectController, "lightAngle", 0, 2 * Math.PI, 0.01).onChange((value) => {
+          directionalLight.position.set(lightRadius * Math.sin(value), lightRadius, lightRadius * Math.cos(value));
+          areaLight.position.copy(directionalLight.position);
+          areaLight.lookAt(0, 0, 0);
+          causticNeedsUpdate = true;
+      });
+      gui.add(effectController, "lightRadius", 0, 100, 0.01).onChange((value) => {
+          directionalLight.position.set(value * Math.sin(lightAngle), value, value * Math.cos(lightAngle));
+          areaLight.position.copy(directionalLight.position);
+          areaLight.lookAt(0, 0, 0);
+          causticNeedsUpdate = true;
+      });*/
 
     // Objects
     const box = new THREE.Mesh(new THREE.BoxGeometry(10, 10, 10), new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: new THREE.Color(1.0, 0.0, 0.0) }));
@@ -158,6 +157,53 @@ async function main() {
         , glassMat);
     bunny.castShadow = true;
     scene.add(bunny);
+    const lightDir = new THREE.Vector3(0.5, 0.707, 0.5);
+    const updateFromMesh = () => {
+            const bunnyBox = new THREE.Box3().setFromObject(bunny, true);
+            const lightPlane = new THREE.Plane(lightDir.clone().normalize().multiplyScalar(-1), 0);
+            let bunnyBoxVertices = [];
+            bunnyBoxVertices.push(new THREE.Vector3(bunnyBox.min.x, bunnyBox.min.y, bunnyBox.min.z));
+            bunnyBoxVertices.push(new THREE.Vector3(bunnyBox.min.x, bunnyBox.min.y, bunnyBox.max.z));
+            bunnyBoxVertices.push(new THREE.Vector3(bunnyBox.min.x, bunnyBox.max.y, bunnyBox.min.z));
+            bunnyBoxVertices.push(new THREE.Vector3(bunnyBox.min.x, bunnyBox.max.y, bunnyBox.max.z));
+            bunnyBoxVertices.push(new THREE.Vector3(bunnyBox.max.x, bunnyBox.min.y, bunnyBox.min.z));
+            bunnyBoxVertices.push(new THREE.Vector3(bunnyBox.max.x, bunnyBox.min.y, bunnyBox.max.z));
+            bunnyBoxVertices.push(new THREE.Vector3(bunnyBox.max.x, bunnyBox.max.y, bunnyBox.min.z));
+            bunnyBoxVertices.push(new THREE.Vector3(bunnyBox.max.x, bunnyBox.max.y, bunnyBox.max.z));
+            const meshCenter = bunnyBox.getCenter(new THREE.Vector3());
+            bunnyBoxVertices = bunnyBoxVertices.map((v) => v.sub(meshCenter));
+            const projectedVerts = bunnyBoxVertices.map((v) => lightPlane.projectPoint(v, new THREE.Vector3()));
+            /* projectedVerts.forEach(vert => {
+                 const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.0, 0.0) }));
+                 sphere.position.copy(vert);
+                 scene.add(sphere);
+             })*/
+            const centralVert = projectedVerts.reduce((a, b) => a.add(b), new THREE.Vector3()).divideScalar(projectedVerts.length);
+            const radius = projectedVerts.map((v) => v.distanceTo(centralVert)).reduce((a, b) => Math.max(a, b));
+            const dirLength = bunnyBoxVertices.map(x => x.dot(lightDir)).reduce((a, b) => Math.max(a, b));
+
+            causticSize = radius;
+            // Shadows
+            directionalLight.position.copy(lightDir.clone().multiplyScalar(dirLength).add(meshCenter));
+            directionalLight.target.position.copy(meshCenter);
+            const dirMatrix = new THREE.Matrix4().lookAt(directionalLight.position, directionalLight.target.position, new THREE.Vector3(0, 1, 0))
+            directionalLight.shadow.camera.left = -causticSize;
+            directionalLight.shadow.camera.right = causticSize;
+            directionalLight.shadow.camera.top = causticSize;
+            directionalLight.shadow.camera.bottom = -causticSize;
+            const yOffset = new THREE.Vector3(0, causticSize, 0).applyMatrix4(dirMatrix);
+            const yTime = (directionalLight.position.y + yOffset.y /*+ causticSize * 2.0 * (1 - lightDir.y)*/ ) / lightDir.y;
+            directionalLight.shadow.camera.near = 0.1;
+            directionalLight.shadow.camera.far = yTime;
+            directionalLight.shadow.camera.updateProjectionMatrix();
+            helper.update();
+            areaLight.height = causticSize * 2.0;
+            areaLight.width = causticSize * 2.0;
+            areaLight.position.copy(directionalLight.position);
+            areaLight.lookAt(directionalLight.target.position);
+        }
+        // Convert projectedVerts to uv coords
+
     const bunnyTree = new MeshBVH(bunny.geometry, { lazyGeneration: false, strategy: SAH });
     const causticsRez = 2048;
     // Build postprocessing stack
@@ -480,6 +526,7 @@ vec3 totalInternalReflection(vec3 ro, vec3 rd, vec3 pos, vec3 normal, float ior,
     vblur.material.uniforms['v'] = { value: 1.0 / causticsRez };
 
     function animate() {
+        updateFromMesh();
         if (causticNeedsUpdate) {
             console.time();
             const dirLightNearPlane = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(directionalLight.shadow.camera.projectionMatrix, directionalLight.shadow.camera.matrixWorldInverse)).planes[4];
