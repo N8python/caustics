@@ -156,10 +156,16 @@ async function main() {
         /*new THREE.SphereGeometry(5, 32, 32).translate(0, 5, 0)*/
         , glassMat);
     bunny.castShadow = true;
+    bunny.frustumCulled = false;
     scene.add(bunny);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2)), new THREE.MeshStandardMaterial({
+        side: THREE.DoubleSide
+    }));
+    ground.castShadow = true;
     const lightDir = new THREE.Vector3(0.5, 0.707, 0.5);
     const updateFromMesh = () => {
             const bunnyBox = new THREE.Box3().setFromObject(bunny, true);
+            // scene.add(new THREE.Box3Helper(bunnyBox, 0xffff00));
             const lightPlane = new THREE.Plane(lightDir.clone().normalize().multiplyScalar(-1), 0);
             let bunnyBoxVertices = [];
             bunnyBoxVertices.push(new THREE.Vector3(bunnyBox.min.x, bunnyBox.min.y, bunnyBox.min.z));
@@ -170,14 +176,10 @@ async function main() {
             bunnyBoxVertices.push(new THREE.Vector3(bunnyBox.max.x, bunnyBox.min.y, bunnyBox.max.z));
             bunnyBoxVertices.push(new THREE.Vector3(bunnyBox.max.x, bunnyBox.max.y, bunnyBox.min.z));
             bunnyBoxVertices.push(new THREE.Vector3(bunnyBox.max.x, bunnyBox.max.y, bunnyBox.max.z));
+            const worldVerts = bunnyBoxVertices.map(v => v.clone());
             const meshCenter = bunnyBox.getCenter(new THREE.Vector3());
-            bunnyBoxVertices = bunnyBoxVertices.map((v) => v.sub(meshCenter));
+            bunnyBoxVertices = bunnyBoxVertices.map((v) => v.clone().sub(meshCenter));
             const projectedVerts = bunnyBoxVertices.map((v) => lightPlane.projectPoint(v, new THREE.Vector3()));
-            /* projectedVerts.forEach(vert => {
-                 const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.0, 0.0) }));
-                 sphere.position.copy(vert);
-                 scene.add(sphere);
-             })*/
             const centralVert = projectedVerts.reduce((a, b) => a.add(b), new THREE.Vector3()).divideScalar(projectedVerts.length);
             const radius = projectedVerts.map((v) => v.distanceTo(centralVert)).reduce((a, b) => Math.max(a, b));
             const dirLength = bunnyBoxVertices.map(x => x.dot(lightDir)).reduce((a, b) => Math.max(a, b));
@@ -196,11 +198,24 @@ async function main() {
             directionalLight.shadow.camera.near = 0.1;
             directionalLight.shadow.camera.far = yTime;
             directionalLight.shadow.camera.updateProjectionMatrix();
+            directionalLight.updateMatrixWorld();
             helper.update();
             areaLight.height = causticSize * 2.0;
             areaLight.width = causticSize * 2.0;
             areaLight.position.copy(directionalLight.position);
             areaLight.lookAt(directionalLight.target.position);
+            // Now find size of ground plane
+            const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+            const groundProjectedCoords = worldVerts.map(v => v.clone().add(lightDir.clone().multiplyScalar(-v.y / lightDir.y)));
+            /*    worldVerts.forEach(v => {
+                    const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.0, 1.0, 0.0) }));
+                    sphere.position.copy(v);
+                    scene.add(sphere);
+                })*/
+            const centerPos = groundProjectedCoords.reduce((a, b) => a.add(b), new THREE.Vector3()).divideScalar(groundProjectedCoords.length);
+            const maxSize = 2 * groundProjectedCoords.map(v => Math.hypot(v.x - centerPos.x, v.z - centerPos.z)).reduce((a, b) => Math.max(a, b));
+            ground.scale.set(maxSize, maxSize, maxSize);
+            ground.position.copy(centerPos);
         }
         // Convert projectedVerts to uv coords
 
@@ -401,7 +416,6 @@ vec3 totalInternalReflection(vec3 ro, vec3 rd, vec3 pos, vec3 normal, float ior,
             float causticTexelSize = (1.0 / causticsRez) * causticSize * 2.0;
             float texelsNeeded = worldRadius / causticTexelSize;
             float sampleRadius = texelsNeeded / causticsRez;
-            float sum = 0.0;
             if (texture2D(depthTexture, vUv).x == 1.0) {
                 gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
                 return;
@@ -464,10 +478,7 @@ vec3 totalInternalReflection(vec3 ro, vec3 rd, vec3 pos, vec3 normal, float ior,
     /*  causticsMesh.matrixAutoUpdate = false;
       causticsMesh.position.y += 0.01;
       scene.add(causticsMesh);*/
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100).applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2)), new THREE.MeshStandardMaterial({
-        side: THREE.DoubleSide
-    }));
-    ground.castShadow = true;
+
     // ground.receiveShadow = true;
     // Apply caustics in material.onBeforeCompile
     ground.material.onBeforeCompile = (shader) => {
@@ -513,8 +524,6 @@ vec3 totalInternalReflection(vec3 ro, vec3 rd, vec3 pos, vec3 normal, float ior,
         vec4 causticsDepth = texture2D(causticsDepthTexture, lightSpacePos.xy);
         float depth = causticsDepth.x;
         totalEmissiveRadiance += caustics.rgb * (1.0 - VSMShadow(shadowTex, lightSpacePos.xy, lightSpacePos.z));
-       // gl_FragColor =  vec4(texture2D(causticsTexture, lightSpacePos.xy).rgb, 1.0);
-       // return;
         `);
 
     }
